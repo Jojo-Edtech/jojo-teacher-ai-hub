@@ -21,7 +21,36 @@ from typing import Optional
 ROOT = Path(__file__).resolve().parents[1]
 DATA_PATH = ROOT / "docs" / "data" / "content.json"
 
+DETAIL_FETCH_DOMAINS = {
+    "cityu.edu.hk",
+    "cuhk.edu.hk",
+    "edb.gov.hk",
+    "edcity.hk",
+    "eduhk.hk",
+    "hk01.com",
+    "hkbu.edu.hk",
+    "hkust.edu.hk",
+    "hku.hk",
+    "ln.edu.hk",
+    "news.gov.hk",
+    "polyu.edu.hk",
+    "tvb.com",
+}
+
 USER_AGENT = "hk-ai-edu-monitor/0.1 (+research summary; contact: GitHub Pages)"
+
+
+def url_has_domain(url: str, domain: str) -> bool:
+    try:
+        hostname = (urllib.parse.urlsplit(url).hostname or "").lower().rstrip(".")
+    except ValueError:
+        return False
+    normalized_domain = domain.lower().rstrip(".")
+    return hostname == normalized_domain or hostname.endswith(f".{normalized_domain}")
+
+
+def url_has_any_domain(url: str, domains: set[str]) -> bool:
+    return any(url_has_domain(url, domain) for domain in domains)
 
 RSS_SOURCES = [
     ("香港教育局 EDB", "http://www.edb.gov.hk/tc/press_release_rss.xml"),
@@ -795,7 +824,7 @@ def enrich(item: dict) -> dict:
         tags.append("政策")
     if any(keyword in text for keyword in EVENT_KEYWORDS):
         tags.append("活动")
-    if "linkedin" in item["source"].lower() or "linkedin.com" in item["url"].lower() or item.get("kind") == "linkedin-shortcut":
+    if "linkedin" in item["source"].lower() or url_has_domain(item["url"], "linkedin.com") or item.get("kind") == "linkedin-shortcut":
         category = "发现"
         tags.append("LinkedIn")
     elif "google" in item["source"].lower():
@@ -888,33 +917,12 @@ def fill_missing_images(items: list[dict]) -> list[dict]:
 
 
 def should_fetch_page_details(item: dict) -> bool:
-    url = item.get("url", "").lower()
-    source = item.get("source", "").lower()
+    url = item.get("url", "").strip()
     if not url.startswith("http"):
         return False
-    if "news.google.com" in url or "linkedin.com" in url:
+    if url_has_domain(url, "news.google.com") or url_has_domain(url, "linkedin.com"):
         return False
-    return any(token in url or token in source for token in [
-        "edcity",
-        "edb.gov.hk",
-        "news.gov.hk",
-        "hk01",
-        "tvb",
-        "web.edu.hku.hk",
-        "cite.hku.hk",
-        "fed.cuhk.edu.hk",
-        "clst.fed.cuhk.edu.hk",
-        "cuhk.edu.hk/clear",
-        "eduhk",
-        "lt.eduhk.hk",
-        "aedi.eduhk.hk",
-        "aapsef.eduhk.hk",
-        "hkust",
-        "cityu.edu.hk",
-        "polyu.edu.hk",
-        "hkbu.edu.hk",
-        "ln.edu.hk",
-    ])
+    return url_has_any_domain(url, DETAIL_FETCH_DOMAINS)
 
 
 def fetch_page_details(url: str) -> dict[str, str]:
@@ -1073,7 +1081,7 @@ def is_relevant(item: dict) -> bool:
     text = combined_text(item)
     if item.get("kind") in {"journal", "linkedin-shortcut"}:
         return True
-    if "linkedin.com" in item.get("url", "").lower():
+    if url_has_domain(item.get("url", ""), "linkedin.com"):
         return has_ai_signal(text) and any(keyword in text for keyword in EDU_KEYWORDS)
     has_ai = has_ai_signal(text)
     has_edu = any(keyword in text for keyword in EDU_KEYWORDS)
