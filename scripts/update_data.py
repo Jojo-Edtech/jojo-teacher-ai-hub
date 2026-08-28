@@ -7,10 +7,12 @@ import datetime as dt
 import email.utils
 import hashlib
 import html
+import ipaddress
 import json
 import re
 import sys
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
@@ -22,6 +24,8 @@ ROOT = Path(__file__).resolve().parents[1]
 DATA_PATH = ROOT / "docs" / "data" / "content.json"
 
 MAX_URL_LENGTH = 4096
+MAX_RESPONSE_BYTES = 8 * 1024 * 1024
+MAX_REDIRECTS = 5
 TEXT_FIELD_LIMITS = {
     "id": 128,
     "title": 500,
@@ -61,6 +65,11 @@ DETAIL_FETCH_DOMAINS = {
     "tvb.com",
 }
 
+TRUSTED_FETCH_DOMAINS = DETAIL_FETCH_DOMAINS | {
+    "crossref.org",
+    "google.com",
+}
+
 USER_AGENT = "hk-ai-edu-monitor/0.1 (+research summary; contact: GitHub Pages)"
 
 
@@ -97,8 +106,8 @@ def normalize_http_url(value: str) -> str:
     return urllib.parse.urlunsplit(parsed)
 
 RSS_SOURCES = [
-    ("香港教育局 EDB", "http://www.edb.gov.hk/tc/press_release_rss.xml"),
-    ("香港教育局 EDB", "http://www.edb.gov.hk/tc/whats_new_rss.xml"),
+    ("香港教育局 EDB", "https://www.edb.gov.hk/tc/press_release_rss.xml"),
+    ("香港教育局 EDB", "https://www.edb.gov.hk/tc/whats_new_rss.xml"),
     ("News.gov.hk", "https://www.news.gov.hk/tc/categories/school_work/html/articlelist.rss.xml"),
 ]
 
@@ -479,10 +488,83 @@ def load_previous() -> dict:
     return {"training": [], "news": [], "policies": [], "events": [], "discoveries": [], "linkedin": [], "journals": []}
 
 
+class NoRedirectHandler(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+NO_REDIRECT_OPENER = urllib.request.build_opener(NoRedirectHandler())
+
+
+def trusted_fetch_root(url: str) -> str:
+    for domain in sorted(TRUSTED_FETCH_DOMAINS, key=len, reverse=True):
+        if url_has_domain(url, domain):
+            return domain
+    return ""
+
+
+def is_safe_fetch_target(url: str) -> bool:
+    normalized = normalize_http_url(url)
+    if not normalized or not trusted_fetch_root(normalized):
+        return False
+
+    parsed = urllib.parse.urlsplit(normalized)
+    if parsed.scheme.lower() != "https":
+        return False
+
+    hostname = (parsed.hostname or "").rstrip(".")
+    try:
+        address = ipaddress.ip_address(hostname)
+    except ValueError:
+        return hostname not in {"localhost"} and not hostname.endswith((".local", ".internal", ".lan"))
+    return address.is_global
+
+
+def redirect_is_allowed(original_url: str, target_url: str) -> bool:
+    original_root = trusted_fetch_root(original_url)
+    return bool(original_root and original_root == trusted_fetch_root(target_url) and is_safe_fetch_target(target_url))
+
+
+def read_limited_response(response) -> bytes:
+    raw_length = response.headers.get("Content-Length")
+    if raw_length:
+        try:
+            content_length = int(raw_length)
+        except ValueError:
+            content_length = None
+        if content_length is not None and content_length > MAX_RESPONSE_BYTES:
+            raise ValueError(f"response exceeds {MAX_RESPONSE_BYTES} bytes")
+
+    body = response.read(MAX_RESPONSE_BYTES + 1)
+    if len(body) > MAX_RESPONSE_BYTES:
+        raise ValueError(f"response exceeds {MAX_RESPONSE_BYTES} bytes")
+    return body
+
+
 def fetch_url(url: str) -> bytes:
-    request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
-    with urllib.request.urlopen(request, timeout=20) as response:
-        return response.read()
+    original_url = normalize_http_url(url)
+    if not is_safe_fetch_target(original_url):
+        raise ValueError("URL is outside the trusted public-source allowlist")
+
+    current_url = original_url
+    for _redirect_count in range(MAX_REDIRECTS + 1):
+        request = urllib.request.Request(current_url, headers={"User-Agent": USER_AGENT})
+        try:
+            with NO_REDIRECT_OPENER.open(request, timeout=20) as response:
+                return read_limited_response(response)
+        except urllib.error.HTTPError as exc:
+            if exc.code not in {301, 302, 303, 307, 308}:
+                raise
+            location = exc.headers.get("Location")
+            exc.close()
+            if not location:
+                raise ValueError("redirect response did not include a location") from exc
+            target_url = normalize_http_url(urllib.parse.urljoin(current_url, location))
+            if not redirect_is_allowed(original_url, target_url):
+                raise ValueError("redirect left the trusted source domain") from exc
+            current_url = target_url
+
+    raise ValueError(f"more than {MAX_REDIRECTS} redirects")
 
 
 def fetch_rss(source: str, url: str) -> list[dict]:

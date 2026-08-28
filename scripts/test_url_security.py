@@ -56,6 +56,46 @@ class UrlSecurityTests(unittest.TestCase):
             )
         )
 
+    def test_fetch_targets_and_redirects_stay_on_trusted_public_domains(self) -> None:
+        self.assertTrue(update_data.is_safe_fetch_target("https://www.edb.gov.hk/tc/news"))
+        self.assertTrue(
+            update_data.redirect_is_allowed(
+                "https://www.edb.gov.hk/tc/news",
+                "https://edb.gov.hk/tc/other",
+            )
+        )
+        for unsafe in [
+            "http://www.edb.gov.hk/tc/news",
+            "http://127.0.0.1/",
+            "http://169.254.169.254/latest/meta-data/",
+            "https://edb.gov.hk.evil.example/",
+            "https://example.org/",
+        ]:
+            with self.subTest(url=unsafe):
+                self.assertFalse(update_data.is_safe_fetch_target(unsafe))
+                self.assertFalse(
+                    update_data.redirect_is_allowed("https://www.edb.gov.hk/tc/news", unsafe)
+                )
+
+    def test_response_reader_enforces_content_and_stream_limits(self) -> None:
+        class FakeResponse:
+            def __init__(self, body: bytes, content_length: str | None = None) -> None:
+                self.body = body
+                self.headers = {} if content_length is None else {"Content-Length": content_length}
+
+            def read(self, limit: int) -> bytes:
+                return self.body[:limit]
+
+        self.assertEqual(update_data.read_limited_response(FakeResponse(b"ok", "2")), b"ok")
+        with self.assertRaises(ValueError):
+            update_data.read_limited_response(
+                FakeResponse(b"", str(update_data.MAX_RESPONSE_BYTES + 1))
+            )
+        with self.assertRaises(ValueError):
+            update_data.read_limited_response(
+                FakeResponse(b"x" * (update_data.MAX_RESPONSE_BYTES + 1))
+            )
+
 
 if __name__ == "__main__":
     unittest.main()
