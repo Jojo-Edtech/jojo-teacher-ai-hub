@@ -1,3 +1,5 @@
+import { safeExternalUrl } from "./url-security.mjs";
+
 const PAGES = ["news", "training", "linkedin", "journals"];
 
 const state = {
@@ -129,7 +131,7 @@ function renderCardList(container, items, mode) {
 }
 
 function renderCard(item, mode, index) {
-  const actionUrl = mode === "training" ? (item.registerUrl || item.url) : item.url;
+  const actionUrl = safeExternalUrl(mode === "training" ? (item.registerUrl || item.url) : item.url);
   const canSummarize = ["news", "linkedin", "journal"].includes(mode);
   const tags = (item.tags || []).slice(0, 4);
 
@@ -146,7 +148,7 @@ function renderCard(item, mode, index) {
         ${mode === "journal" ? renderJournalDetails(item) : ""}
         ${tags.length ? `<div class="tags">${tags.map((tag) => `<span class="tag">${escapeHtml(tag)}</span>`).join("")}</div>` : ""}
         <div class="card-actions">
-          <a href="${escapeAttr(actionUrl)}" target="_blank" rel="noopener">${actionLabel(item, mode)}</a>
+          ${actionUrl ? `<a href="${escapeAttr(actionUrl)}" target="_blank" rel="noopener noreferrer">${actionLabel(item, mode)}</a>` : `<span>链接不可用</span>`}
           ${canSummarize ? `<button type="button" data-summary-id="${escapeAttr(item.id)}">生成总结</button>` : ""}
         </div>
       </div>
@@ -193,13 +195,14 @@ function actionLabel(item, mode) {
 }
 
 function renderSummary(item) {
+  const safeUrl = safeExternalUrl(item.url);
   els.summaryResult.dataset.ready = "true";
   els.summaryResult.innerHTML = `
     <h3>${escapeHtml(cleanTitle(item.title))}</h3>
     <p><strong>一句话总结：</strong>${escapeHtml(cardIntro(item, item.category))}</p>
     <p><strong>重点内容：</strong>${escapeHtml(item.researchValue || "这条资料可作为香港 AI 教育发展、教师培训、文献追踪或政策环境的研究线索。")}</p>
     <p><strong>和教师 AI 研究的关系：</strong>${escapeHtml(item.teacherResearchUse || "可用于追踪教师专业发展、AI素养培训、学校采纳教育科技的背景变化。")}</p>
-    <a href="${escapeAttr(item.url)}" target="_blank" rel="noopener">查看原文链接</a>
+    ${safeUrl ? `<a href="${escapeAttr(safeUrl)}" target="_blank" rel="noopener noreferrer">查看原文链接</a>` : `<span>原文链接不可用</span>`}
   `;
 }
 
@@ -219,13 +222,14 @@ function renderManualSummary(url) {
     return;
   }
 
+  const safeUrl = safeExternalUrl(url);
   els.summaryResult.dataset.ready = "true";
   els.summaryResult.innerHTML = `
     <h3>待整理网页</h3>
     <p><strong>一句话总结：</strong>这个链接尚未进入资料库。</p>
     <p><strong>重点内容：</strong>之后可以把这个来源加入每日更新脚本，或作为手动研究记录保存。</p>
     <p><strong>和教师 AI 研究的关系：</strong>建议先确认网页是否包含教师培训、AI教学实践、政策、学校案例或研究文章。</p>
-    <a href="${escapeAttr(url)}" target="_blank" rel="noopener">打开网页</a>
+    ${safeUrl ? `<a href="${escapeAttr(safeUrl)}" target="_blank" rel="noopener noreferrer">打开网页</a>` : `<span>只支持安全的 http/https 网页链接。</span>`}
   `;
 }
 

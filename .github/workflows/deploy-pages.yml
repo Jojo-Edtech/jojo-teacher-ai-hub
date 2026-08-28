@@ -26,6 +26,10 @@ jobs:
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           persist-credentials: false
+      - name: Validate generated content boundaries
+        run: |
+          python3 -m unittest discover -s scripts -p 'test_*.py'
+          node --test scripts/test_url_security.mjs
       - name: Configure Pages
         uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5.0.0
       - name: Upload artifact

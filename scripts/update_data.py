@@ -21,6 +21,30 @@ from typing import Optional
 ROOT = Path(__file__).resolve().parents[1]
 DATA_PATH = ROOT / "docs" / "data" / "content.json"
 
+MAX_URL_LENGTH = 4096
+TEXT_FIELD_LIMITS = {
+    "id": 128,
+    "title": 500,
+    "source": 200,
+    "summary": 2_000,
+    "abstract": 4_000,
+    "authors": 1_000,
+    "journal": 300,
+    "doi": 300,
+    "issn": 64,
+    "kind": 64,
+    "date": 64,
+    "publishedDate": 64,
+    "eventDate": 64,
+    "deadlineDate": 64,
+    "eventTime": 80,
+    "period": 160,
+    "category": 80,
+    "cardIntro": 1_000,
+    "researchValue": 1_000,
+    "teacherResearchUse": 1_000,
+}
+
 DETAIL_FETCH_DOMAINS = {
     "cityu.edu.hk",
     "cuhk.edu.hk",
@@ -51,6 +75,26 @@ def url_has_domain(url: str, domain: str) -> bool:
 
 def url_has_any_domain(url: str, domains: set[str]) -> bool:
     return any(url_has_domain(url, domain) for domain in domains)
+
+
+def normalize_http_url(value: str) -> str:
+    raw = str(value or "").strip()
+    if not raw or len(raw) > MAX_URL_LENGTH:
+        return ""
+    if "\\" in raw or any(ord(char) < 32 or ord(char) == 127 for char in raw):
+        return ""
+
+    try:
+        parsed = urllib.parse.urlsplit(raw)
+        if parsed.scheme.lower() not in {"http", "https"}:
+            return ""
+        if not parsed.hostname or parsed.username or parsed.password:
+            return ""
+        _ = parsed.port
+    except (TypeError, ValueError):
+        return ""
+
+    return urllib.parse.urlunsplit(parsed)
 
 RSS_SOURCES = [
     ("香港教育局 EDB", "http://www.edb.gov.hk/tc/press_release_rss.xml"),
@@ -978,6 +1022,20 @@ def extract_registration_url(raw: str, page_url: str) -> str:
 
 
 def sanitize_item(item: dict) -> None:
+    for field, limit in TEXT_FIELD_LIMITS.items():
+        if field in item:
+            item[field] = clean_text(str(item[field] or ""))[:limit]
+
+    for field in ("url", "registerUrl", "image"):
+        if field in item:
+            safe_url = normalize_http_url(item.get(field, ""))
+            if safe_url:
+                item[field] = safe_url
+            elif field == "url":
+                item[field] = ""
+            else:
+                item.pop(field, None)
+
     register_url = item.get("registerUrl", "")
     if register_url and not is_registration_link("register", register_url):
         item.pop("registerUrl", None)
