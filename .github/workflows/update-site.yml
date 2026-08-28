@@ -22,12 +22,16 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: "3.12"
       - name: Fetch latest sources
         run: python scripts/update_data.py
       - name: Commit updated data
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           if git diff --quiet -- docs/data/content.json; then
             echo "No data changes"
@@ -37,6 +41,7 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add docs/data/content.json
           git commit -m "Update AI education data"
+          gh auth setup-git
           git push
       - name: Configure Pages
         uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5.0.0
