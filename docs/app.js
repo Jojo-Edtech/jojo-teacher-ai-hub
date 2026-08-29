@@ -1,4 +1,4 @@
-import { safeExternalUrl } from "./url-security.mjs";
+import { isGovernmentSource, safeExternalUrl } from "./url-security.mjs";
 
 const PAGES = ["news", "training", "linkedin", "journals"];
 
@@ -412,7 +412,7 @@ function shortSource(source) {
   if (source.includes("EdCity")) return "EdCity";
   if (source.includes("Google")) return "Google";
   if (source.includes("EDB")) return "EDB";
-  if (source.includes("News.gov")) return "Gov News";
+  if (isGovernmentSource({ source })) return "Gov News";
   return source.split(" ")[0];
 }
 
@@ -422,7 +422,7 @@ function sourceClass(item) {
   if (source.includes("linkedin")) return "image-linkedin";
   if (source.includes("edcity") || source.includes("教师培训")) return "image-training";
   if (source.includes("google")) return "image-google";
-  if (source.includes("edb") || source.includes("news.gov")) return "image-gov";
+  if (isGovernmentSource(item)) return "image-gov";
   return "image-news";
 }
 

@@ -13,3 +13,12 @@ export function safeExternalUrl(value) {
     return "";
   }
 }
+
+export function isGovernmentSource(item) {
+  const source = String(item?.source ?? "").trim().toLowerCase();
+  const category = String(item?.category ?? "").trim().toLowerCase();
+  const kind = String(item?.kind ?? "").trim().toLowerCase();
+
+  if (source === "news.gov.hk") return true;
+  return [source, category, kind].some((value) => /(?:^|[^a-z0-9])edb(?:$|[^a-z0-9])/u.test(value));
+}
