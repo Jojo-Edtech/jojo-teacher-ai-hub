@@ -28,7 +28,7 @@ https://jojo-edtech.github.io/teacherai/
 在终端运行：
 
 ```bash
-cd /Users/zhouxinxin/Documents/Codex/2026-06-09/ai-github
+cd teacherai
 python3 -m http.server 4177 --bind 127.0.0.1 -d docs
 ```
 
